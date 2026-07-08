@@ -51,6 +51,22 @@ def register(sub) -> None:
     sp.add_argument("--agent", default="leek-01")
     sp.set_defaults(func=cmd_wake)
 
+    register_diary(sub)
+
     sp = sub.add_parser("snapshot", help="回放决策快照（缺省最新一条）")
     sp.add_argument("id", nargs="?", type=int, default=None)
     sp.set_defaults(func=cmd_snapshot)
+
+
+def cmd_diary(args) -> None:
+    from . import memory
+
+    for e in memory.recent(args.agent, args.limit):
+        print(f"[{e['ts'][:16]} {e['scene']}] {e['content']}")
+
+
+def register_diary(sub) -> None:
+    sp = sub.add_parser("diary", help="按时间读韭菜日记")
+    sp.add_argument("--agent", default="leek-01")
+    sp.add_argument("--limit", type=int, default=20)
+    sp.set_defaults(func=cmd_diary)
