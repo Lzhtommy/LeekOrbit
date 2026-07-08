@@ -33,10 +33,11 @@ def main(argv=None) -> None:
     sp = sub.add_parser("run", help="常驻运行（心跳 + 仪表盘）")
     sp.set_defaults(func=cmd_run)
 
-    from . import broker_cli, feed_cli
+    from . import broker_cli, feed_cli, wake_cli
 
     broker_cli.register(sub)
     feed_cli.register(sub)
+    wake_cli.register(sub)
 
     args = p.parse_args(argv)
     if args.db:
