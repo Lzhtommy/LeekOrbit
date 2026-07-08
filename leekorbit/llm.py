@@ -15,6 +15,7 @@ from . import db
 log = logging.getLogger(__name__)
 
 DEFAULT_LLM = {
+    "provider": "openai",  # openai = OpenAI 兼容协议（DeepSeek 等）；anthropic = 官方 Anthropic SDK
     "base_url": "https://api.deepseek.com",
     "api_key_env": "LEEK_LLM_API_KEY",
     "cheap_model": "deepseek-chat",
@@ -27,13 +28,22 @@ class LLM:
     def __init__(self, cfg: dict | None = None, agent: str = "leek-01"):
         self.cfg = {**DEFAULT_LLM, **(cfg or {})}
         self.agent = agent
+        provider = os.environ.get("LEEK_LLM_PROVIDER", self.cfg["provider"])
+        self.mock = False
+        if provider == "anthropic":
+            if os.environ.get("ANTHROPIC_API_KEY"):
+                self.client = AnthropicAdapter()
+            else:
+                self.client = MockClient()
+                self.mock = True
+                log.warning("ANTHROPIC_API_KEY 未设置，进入 mock 模式（数据不计入实验观察）")
+            return
         key = os.environ.get(self.cfg["api_key_env"]) or os.environ.get("LEEK_LLM_API_KEY")
         base = os.environ.get("LEEK_LLM_BASE_URL", self.cfg["base_url"])
         if key:
             from openai import OpenAI
 
             self.client = OpenAI(base_url=base, api_key=key)
-            self.mock = False
         else:
             self.client = MockClient()
             self.mock = True
@@ -70,6 +80,81 @@ class LLM:
             tier=tier, model=model, prompt_tokens=pt, completion_tokens=ct, cost_est=round(cost, 6),
         )
         return resp.choices[0].message
+
+
+# -- Anthropic 适配器 ----------------------------------------------------------
+
+
+class AnthropicAdapter:
+    """把 wake/tools 层使用的 OpenAI 兼容调用面翻译成 Anthropic Messages API。
+
+    上层协议不变（chat.completions.create + tool_calls），被试可在 DeepSeek 与
+    Claude 间只改配置切换。注意：Opus 4.7+ 不接受 temperature 等采样参数，
+    此处一律丢弃。
+    """
+
+    def __init__(self):
+        import anthropic
+
+        self._client = anthropic.Anthropic()  # 从 ANTHROPIC_API_KEY 读取凭证
+        self.chat = _Obj(completions=self)
+
+    def create(self, model, messages, tools=None, **_ignored):
+        system, converted = self._convert_messages(messages)
+        params = {"model": model, "max_tokens": 8192, "messages": converted}
+        if system:
+            params["system"] = system
+        if tools:
+            params["tools"] = [self._convert_tool(t) for t in tools]
+        resp = self._client.messages.create(**params)
+        return self._convert_response(resp)
+
+    @staticmethod
+    def _convert_tool(t: dict) -> dict:
+        f = t["function"]
+        return {"name": f["name"], "description": f.get("description", ""),
+                "input_schema": f["parameters"]}
+
+    @staticmethod
+    def _convert_messages(messages: list[dict]) -> tuple[str, list[dict]]:
+        system_parts: list[str] = []
+        out: list[dict] = []
+        for m in messages:
+            role = m.get("role")
+            if role == "system":
+                system_parts.append(m["content"])
+            elif role == "user":
+                out.append({"role": "user", "content": m["content"]})
+            elif role == "assistant":
+                blocks = []
+                if m.get("content"):
+                    blocks.append({"type": "text", "text": m["content"]})
+                for tc in m.get("tool_calls") or []:
+                    blocks.append({
+                        "type": "tool_use", "id": tc["id"], "name": tc["function"]["name"],
+                        "input": json.loads(tc["function"]["arguments"] or "{}"),
+                    })
+                out.append({"role": "assistant", "content": blocks})
+            elif role == "tool":
+                block = {"type": "tool_result", "tool_use_id": m["tool_call_id"],
+                         "content": m["content"]}
+                # 同一轮的多个工具结果必须并入同一条 user 消息
+                if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                    out[-1]["content"].append(block)
+                else:
+                    out.append({"role": "user", "content": [block]})
+        return "\n\n".join(system_parts), out
+
+    @staticmethod
+    def _convert_response(resp):
+        text_parts = [b.text for b in resp.content if b.type == "text"]
+        tool_calls = [_tc(b.id, b.name, b.input) for b in resp.content if b.type == "tool_use"]
+        usage = _Obj(
+            prompt_tokens=resp.usage.input_tokens,
+            completion_tokens=resp.usage.output_tokens,
+        )
+        msg = _msg(content="".join(text_parts) or None, tool_calls=tool_calls or None)
+        return _Obj(choices=[_Obj(message=msg)], usage=usage)
 
 
 # -- mock 模式 ----------------------------------------------------------------

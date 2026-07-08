@@ -7,6 +7,8 @@ services:
       TZ: Asia/Shanghai            # 调度依赖北京时间，勿改
       LEEK_LLM_API_KEY: ${LEEK_LLM_API_KEY:-}
       LEEK_LLM_BASE_URL: ${LEEK_LLM_BASE_URL:-}
+      LEEK_LLM_PROVIDER: ${LEEK_LLM_PROVIDER:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - ./data:/app/data           # SQLite（账本/快照/日记）持久化
       - ./config:/app/config

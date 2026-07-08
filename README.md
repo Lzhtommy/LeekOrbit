@@ -12,9 +12,17 @@
 ```bash
 uv sync
 
-# 配置被试大脑（不配则进入 mock 模式，数据不计入实验观察）
-export LEEK_LLM_API_KEY=sk-...          # DeepSeek key（ADR-0003）
+# 配置被试大脑（不配则进入 mock 模式，数据不计入实验观察）——二选一：
+
+# 方案 A：DeepSeek 等 OpenAI 兼容服务（ADR-0003 默认）
+export LEEK_LLM_API_KEY=sk-...          # DeepSeek key
 # export LEEK_LLM_BASE_URL=...          # 可选，默认 https://api.deepseek.com
+
+# 方案 B：Claude 当被试（官方 anthropic SDK）
+# export ANTHROPIC_API_KEY=sk-ant-...
+# 并把 config/platform.yaml 的 llm.provider 改为 anthropic、
+# cheap_model/strong_model 改为 claude-haiku-4-5 / claude-opus-4-8（文件内有注释模板）
+# 注意：正式观察期开始后不许再换（ADR-0003：换模型即换被试）
 
 uv run leekorbit run                    # 常驻：心跳调度 + 仪表盘 http://localhost:8798
 ```

@@ -5,6 +5,7 @@ description = "A股韭菜Agent行为金融学观察实验平台"
 requires-python = ">=3.11"
 dependencies = [
     "akshare>=1.18.64",
+    "anthropic>=0.116.0",
     "apscheduler>=3.11.3",
     "fastapi>=0.139.0",
     "openai>=2.44.0",
