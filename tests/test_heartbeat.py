@@ -70,3 +70,15 @@ def test_wake_failure_recorded():
     assert (routine.INTRADAY, "failed") in fired
     r = db.one("SELECT detail FROM wakes WHERE status='failed'")
     assert "llm down" in r["detail"]
+
+
+def test_interrupted_wake_marked_failed_on_restart():
+    """崩溃时卡在 running 的唤醒，重启后的 tick 标记 failed 且不重放。"""
+    hb = Heartbeat("leek-01", lookback_days=0)
+    crash_ts = dt.datetime.combine(TRADING_DAY, dt.time(9, 35))
+    db.insert("wakes", ts=crash_ts.isoformat(), agent="leek-01",
+              scene=routine.INTRADAY, status="running", detail=None)
+    hb.tick(dt.datetime.combine(TRADING_DAY, dt.time(10, 6)))
+    r = db.one("SELECT status, detail FROM wakes WHERE ts=?", crash_ts.isoformat())
+    assert r["status"] == "failed" and "interrupted" in r["detail"]
+    assert db.one("SELECT COUNT(*) n FROM wakes WHERE ts=?", crash_ts.isoformat())["n"] == 1

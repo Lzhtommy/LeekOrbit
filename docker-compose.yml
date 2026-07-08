@@ -1,0 +1,14 @@
+services:
+  leekorbit:
+    build: .
+    container_name: leekorbit
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai            # 调度依赖北京时间，勿改
+      LEEK_LLM_API_KEY: ${LEEK_LLM_API_KEY:-}
+      LEEK_LLM_BASE_URL: ${LEEK_LLM_BASE_URL:-}
+    volumes:
+      - ./data:/app/data           # SQLite（账本/快照/日记）持久化
+      - ./config:/app/config
+    ports:
+      - "8798:8798"                # 仪表盘

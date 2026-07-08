@@ -42,11 +42,24 @@ class LLM:
     def model_for(self, tier: str) -> str:
         return self.cfg["strong_model"] if tier == "strong" else self.cfg["cheap_model"]
 
-    def complete(self, tier: str, messages: list[dict], tools: list[dict], wake_id: int | None = None):
+    def complete(self, tier: str, messages: list[dict], tools: list[dict], wake_id: int | None = None,
+                 retries: int = 3):
         model = self.model_for(tier)
-        resp = self.client.chat.completions.create(
-            model=model, messages=messages, tools=tools, temperature=1.0
-        )
+        last_err = None
+        for attempt in range(retries):
+            try:
+                resp = self.client.chat.completions.create(
+                    model=model, messages=messages, tools=tools, temperature=1.0
+                )
+                break
+            except Exception as e:
+                last_err = e
+                log.warning("llm %s attempt %d failed: %s", model, attempt + 1, e)
+                import time
+
+                time.sleep(2 ** attempt)
+        else:
+            raise RuntimeError(f"LLM {model} 连续 {retries} 次调用失败: {last_err}") from last_err
         usage = getattr(resp, "usage", None)
         pt = getattr(usage, "prompt_tokens", 0) or 0
         ct = getattr(usage, "completion_tokens", 0) or 0

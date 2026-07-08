@@ -29,6 +29,7 @@ class Heartbeat:
     def tick(self, now: dt.datetime | None = None) -> list[tuple[str, str]]:
         """对账一次，返回本次落库的 [(scene, status)]。可直接在测试中调用。"""
         now = now or dt.datetime.now()
+        self._recover_interrupted(now)
         fired: list[tuple[str, str]] = []
         for day_offset in range(self.lookback_days, -1, -1):
             date = now.date() - dt.timedelta(days=day_offset)
@@ -43,6 +44,16 @@ class Heartbeat:
                     continue
                 fired.append((scene, self._fire(planned, scene)))
         return fired
+
+    def _recover_interrupted(self, now: dt.datetime) -> None:
+        """进程崩溃时卡在 running 的唤醒，超过宽限期后标记 failed，不重放。"""
+        cutoff = (now - GRACE).isoformat()
+        db.conn().execute(
+            "UPDATE wakes SET status='failed', detail='interrupted by restart' "
+            "WHERE agent=? AND status='running' AND ts < ?",
+            (self.agent, cutoff),
+        )
+        db.conn().commit()
 
     def _recorded(self, planned: dt.datetime) -> bool:
         return db.one(

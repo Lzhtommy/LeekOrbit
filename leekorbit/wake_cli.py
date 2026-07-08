@@ -52,6 +52,7 @@ def register(sub) -> None:
     sp.set_defaults(func=cmd_wake)
 
     register_diary(sub)
+    register_costs(sub)
 
     sp = sub.add_parser("snapshot", help="回放决策快照（缺省最新一条）")
     sp.add_argument("id", nargs="?", type=int, default=None)
@@ -70,3 +71,21 @@ def register_diary(sub) -> None:
     sp.add_argument("--agent", default="leek-01")
     sp.add_argument("--limit", type=int, default=20)
     sp.set_defaults(func=cmd_diary)
+
+
+def cmd_costs(args) -> None:
+    from . import db
+
+    print("日期        调用数  prompt_tok  compl_tok   成本(元)")
+    for r in db.rows(
+        "SELECT substr(ts,1,10) d, COUNT(*) n, SUM(prompt_tokens) pt, "
+        "SUM(completion_tokens) ct, SUM(cost_est) c FROM llm_calls "
+        "GROUP BY d ORDER BY d DESC LIMIT ?", args.limit
+    ):
+        print(f"{r['d']}  {r['n']:>5}  {r['pt'] or 0:>10}  {r['ct'] or 0:>9}  {r['c'] or 0:>9.4f}")
+
+
+def register_costs(sub) -> None:
+    sp = sub.add_parser("costs", help="LLM 成本按日汇总")
+    sp.add_argument("--limit", type=int, default=31)
+    sp.set_defaults(func=cmd_costs)
