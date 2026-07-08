@@ -20,11 +20,15 @@ def build_heartbeat() -> Heartbeat:
         try:
             return inner(scene, planned, wake_id)
         finally:
-            if scene == routine.CLOSE_REVIEW:  # 收盘复盘时点顺带结算当日净值
+            if scene == routine.CLOSE_REVIEW:  # 收盘复盘时点顺带结算净值并检查权限成长
                 try:
                     nav.settle(persona["name"], planned.date())
+                    from . import permissions
+
+                    permissions.check_chinext_unlock(
+                        persona["name"], persona, config.load_platform().get("permissions"))
                 except Exception:
-                    log.exception("nav settle failed")
+                    log.exception("post-close settlement failed")
 
     return Heartbeat(agent=persona["name"], routine_cfg=persona.get("routine"), on_wake=on_wake)
 

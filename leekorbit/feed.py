@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from . import datafeed, db, exchange, memory, routine
 
@@ -98,7 +99,11 @@ def _fmt_notices(agent: str) -> str:
         return ""
     lines = ["【券商通知】"]
     for r in rows:
-        lines.append(f"  {r['payload']}")
+        try:
+            msg = json.loads(r["payload"]).get("message", r["payload"])
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            msg = r["payload"]
+        lines.append(f"  {msg}")
         db.conn().execute("UPDATE events SET notified=1 WHERE id=?", (r["id"],))
     db.conn().commit()
     return "\n".join(lines)
