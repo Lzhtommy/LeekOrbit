@@ -1,20 +1,19 @@
 # 平台配置。模型两层路由见 ADR-0003：正式观察期开跑后不许换（换模型即换被试）。
 llm:
-  provider: openai                     # openai = OpenAI 兼容协议（DeepSeek 等）；anthropic = 官方 Anthropic SDK
-  base_url: https://api.deepseek.com   # 仅 openai 协议使用；可用 LEEK_LLM_BASE_URL 覆盖
-  api_key_env: LEEK_LLM_API_KEY        # 未设置对应 key 时自动进入 mock 模式
-  cheap_model: deepseek-chat           # 看盘守夜层
-  strong_model: deepseek-reasoner      # 交易决策 / 晚间复盘层
+  provider: anthropic                  # 官方 Anthropic SDK，凭证读 ANTHROPIC_API_KEY 环境变量
+  cheap_model: claude-haiku-4-5        # 看盘守夜层
+  strong_model: claude-opus-4-8        # 交易决策 / 晚间复盘层
   pricing_cny_per_mtok:                # [输入, 输出]，用于成本估算
-    deepseek-chat: [2.0, 8.0]
-    deepseek-reasoner: [4.0, 16.0]
     claude-haiku-4-5: [7.2, 36]        # $1/$5 ×7.2 汇率
     claude-opus-4-8: [36, 180]         # $5/$25 ×7.2 汇率
+    deepseek-chat: [2.0, 8.0]
+    deepseek-reasoner: [4.0, 16.0]
 
-  # 用 Claude 当被试：把上面几行改成 ↓，并设置 ANTHROPIC_API_KEY 环境变量
-  # provider: anthropic
-  # cheap_model: claude-haiku-4-5
-  # strong_model: claude-opus-4-8
+  # 换回 DeepSeek 等 OpenAI 兼容服务时改成 ↓，并设置 LEEK_LLM_API_KEY
+  # provider: openai
+  # base_url: https://api.deepseek.com   # 可用 LEEK_LLM_BASE_URL 覆盖
+  # cheap_model: deepseek-chat
+  # strong_model: deepseek-reasoner
 
 exchange:
   commission_rate: 0.00025   # 万2.5
