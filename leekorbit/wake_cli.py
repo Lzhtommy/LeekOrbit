@@ -53,6 +53,7 @@ def register(sub) -> None:
 
     register_diary(sub)
     register_costs(sub)
+    register_analyze(sub)
 
     sp = sub.add_parser("snapshot", help="回放决策快照（缺省最新一条）")
     sp.add_argument("id", nargs="?", type=int, default=None)
@@ -89,3 +90,14 @@ def register_costs(sub) -> None:
     sp = sub.add_parser("costs", help="LLM 成本按日汇总")
     sp.add_argument("--limit", type=int, default=31)
     sp.set_defaults(func=cmd_costs)
+
+
+def register_analyze(sub) -> None:
+    def cmd(args):
+        from .analysis import disposition
+
+        disposition.main(args.agent)
+
+    sp = sub.add_parser("analyze", help="处置效应离线统计（只读账本）")
+    sp.add_argument("--agent", default="leek-01")
+    sp.set_defaults(func=cmd)
