@@ -1,0 +1,30 @@
+[project]
+name = "leekorbit"
+version = "0.1.0"
+description = "A股韭菜Agent行为金融学观察实验平台"
+requires-python = ">=3.11"
+dependencies = [
+    "akshare>=1.18.64",
+    "apscheduler>=3.11.3",
+    "fastapi>=0.139.0",
+    "openai>=2.44.0",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.50.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+leekorbit = "leekorbit.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+packages = ["leekorbit", "leekorbit.dashboard", "leekorbit.analysis"]

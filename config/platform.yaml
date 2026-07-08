@@ -1,0 +1,29 @@
+# 平台配置。模型两层路由见 ADR-0003：开跑后不许换（换模型即换被试）。
+llm:
+  base_url: https://api.deepseek.com   # OpenAI 兼容；可用 LEEK_LLM_BASE_URL 覆盖
+  api_key_env: LEEK_LLM_API_KEY        # 未设置该环境变量时自动进入 mock 模式
+  cheap_model: deepseek-chat           # 看盘守夜层
+  strong_model: deepseek-reasoner      # 交易决策 / 晚间复盘层
+  pricing_cny_per_mtok:                # [输入, 输出]，用于成本估算
+    deepseek-chat: [2.0, 8.0]
+    deepseek-reasoner: [4.0, 16.0]
+
+exchange:
+  commission_rate: 0.00025   # 万2.5
+  commission_min: 5.0        # 最低5元
+  stamp_tax_rate: 0.0005     # 印花税，仅卖出
+  transfer_fee_rate: 0.00001 # 过户费，双边
+
+agent:
+  lookup_limit: 5            # 每次唤醒主动查询上限
+  diary_recall: 5            # 信息流附带最近几条日记
+
+permissions:
+  chinext_min_days: 20            # 创业板解锁：开户满20个交易日
+  chinext_min_avg_assets: 100000  # 且近20日日均资产不低于10万
+
+dashboard:
+  host: 0.0.0.0
+  port: 8798
+
+budget_monthly_cny: 100
