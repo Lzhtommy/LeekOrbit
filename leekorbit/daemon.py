@@ -11,13 +11,21 @@ log = logging.getLogger(__name__)
 
 def build_heartbeat() -> Heartbeat:
     persona = config.load_persona()
-    on_wake = None
-    try:
-        from .wake import make_wake_handler
+    from . import nav, routine
+    from .wake import make_wake_handler
 
-        on_wake = make_wake_handler(persona)
-    except ImportError:
-        log.info("wake handler not available yet; running heartbeat-only")
+    inner = make_wake_handler(persona)
+
+    def on_wake(scene: str, planned, wake_id: int) -> str:
+        try:
+            return inner(scene, planned, wake_id)
+        finally:
+            if scene == routine.CLOSE_REVIEW:  # 收盘复盘时点顺带结算当日净值
+                try:
+                    nav.settle(persona["name"], planned.date())
+                except Exception:
+                    log.exception("nav settle failed")
+
     return Heartbeat(agent=persona["name"], routine_cfg=persona.get("routine"), on_wake=on_wake)
 
 

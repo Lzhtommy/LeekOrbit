@@ -28,3 +28,6 @@ package = true
 
 [tool.setuptools]
 packages = ["leekorbit", "leekorbit.dashboard", "leekorbit.analysis"]
+
+[tool.setuptools.package-data]
+"leekorbit.dashboard" = ["static/*"]
