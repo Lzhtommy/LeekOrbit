@@ -91,6 +91,18 @@ def _fmt_flash() -> str:
     return "【财经快讯】\n" + "\n".join(f"  {n['time']} {n['title']}" for n in news)
 
 
+def _fmt_holding_guba(agent: str) -> str:
+    pos = exchange.positions(agent)
+    lines = []
+    for sym, p in list(pos.items())[:2]:
+        posts = datafeed.guba_posts(sym, 3)
+        if posts:
+            name = datafeed.display_name(sym, p["name"])
+            lines.append(f"【{name}吧】大家在说：\n" + "\n".join(
+                f"  「{q['title']}」（{q['comments']}条回复）" for q in posts))
+    return "\n\n".join(lines)
+
+
 def _fmt_diary(agent: str, limit: int = 5) -> str:
     entries = memory.recent(agent, limit)
     if not entries:
@@ -153,15 +165,15 @@ def build(agent: str, scene: str, now: dt.datetime | None = None, diary_recall: 
     elif scene == routine.INTRADAY:
         blocks += [_fmt_indices(), _fmt_zt(), _fmt_hot()]
     elif scene == routine.LUNCH:
-        blocks += [_fmt_indices(), _fmt_zt(), _fmt_flash(), _fmt_hot(), _fmt_holding_news(agent)]
+        blocks += [_fmt_indices(), _fmt_zt(), _fmt_flash(), _fmt_hot(), _fmt_holding_guba(agent)]
     elif scene == routine.CLOSE_REVIEW:
         blocks += [_fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_zt(), _fmt_hot()]
     elif scene == routine.EVENING:
         blocks += [
             _fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_zt(), _fmt_flash(),
-            _fmt_holding_news(agent), _fmt_hot(), _fmt_diary(agent, diary_recall),
+            _fmt_holding_news(agent), _fmt_holding_guba(agent), _fmt_hot(), _fmt_diary(agent, diary_recall),
         ]
     elif scene == routine.WEEKEND:
-        blocks += [_fmt_flash(), _fmt_hot(), _fmt_holding_news(agent), _fmt_diary(agent, diary_recall)]
+        blocks += [_fmt_flash(), _fmt_hot(), _fmt_holding_guba(agent), _fmt_diary(agent, diary_recall)]
 
     return "\n\n".join(b for b in blocks if b)

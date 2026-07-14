@@ -45,7 +45,7 @@ def test_zt_pool_parsing(monkeypatch):
 
 
 def test_feed_zt_block(monkeypatch):
-    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "cls_news"):
+    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "cls_news", "guba_posts"):
         monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: None)
     monkeypatch.setattr(datafeed, "zt_pool", lambda: [
@@ -57,7 +57,7 @@ def test_feed_zt_block(monkeypatch):
 
 
 def test_feed_flash_block(monkeypatch):
-    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "stock_news"):
+    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "stock_news", "guba_posts"):
         monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: None)
     monkeypatch.setattr(datafeed, "cls_news", lambda limit=8: [
@@ -72,3 +72,56 @@ def test_blocks_omitted_silently_when_unavailable(monkeypatch):
     monkeypatch.setattr(datafeed, "quote", lambda s: None)
     text = feed.build("leek-01", routine.INTRADAY)
     assert "涨停风向" not in text and "财经快讯" not in text  # 调味料缺失不报错不占位
+
+
+GUBA_RAW = [
+    {"post_title": "明天低开直接满仓干，错过再等三年", "post_type": 20,
+     "post_click_count": 5000, "post_comment_count": 88, "post_publish_time": "2026-07-14 09:00:00"},
+    {"post_title": "某券商研报：目标价上调", "post_type": 11,  # 非散户帖，应剔除
+     "post_click_count": 99999, "post_comment_count": 1, "post_publish_time": "2026-07-14 08:00:00"},
+    {"post_title": "完了完了主力出货了快跑", "post_type": 0,
+     "post_click_count": 20000, "post_comment_count": 200, "post_publish_time": "2026-07-14 10:00:00"},
+]
+
+
+def test_guba_posts_filter_and_sort(monkeypatch):
+    monkeypatch.setattr(datafeed, "_guba_raw", lambda s: GUBA_RAW)
+    datafeed._cache.pop("guba:600118", None)
+    posts = datafeed.guba_posts("600118", 5)
+    assert [p["title"] for p in posts] == ["完了完了主力出货了快跑", "明天低开直接满仓干，错过再等三年"]
+    assert posts[0]["comments"] == 200  # 按点击量排序，研报类已剔除
+
+
+def test_guba_in_lookup(monkeypatch):
+    from leekorbit.tools import ActionSpace
+    import datetime as dt
+
+    monkeypatch.setattr(datafeed, "quote", lambda s: {
+        "symbol": s, "last": 10.0, "prev_close": 10.0, "limit_up": 11.0, "limit_down": 9.0,
+        "open": 10.0, "high": 10.0, "low": 10.0, "pct": 0.0, "turnover": 1.0})
+    monkeypatch.setattr(datafeed, "stock_name", lambda s: "测试股")
+    for fn in ("daily_kline", "stock_news", "stock_comment"):
+        monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
+    monkeypatch.setattr(datafeed, "guba_posts",
+                        lambda s, limit=5: [{"title": "洗盘而已别慌", "time": "", "clicks": 1, "comments": 2}])
+    space = ActionSpace({"name": "leek-01", "permissions": ["main_board"]}, "intraday",
+                        dt.datetime(2026, 7, 14, 10, 0))
+    out = space.dispatch("lookup_stock", {"symbol": "600118"})
+    assert "股吧热帖：「洗盘而已别慌」" in out
+
+
+def test_feed_holding_guba(monkeypatch):
+    import datetime as dt
+
+    from leekorbit import exchange
+    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "cls_news", "stock_news"):
+        monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
+    monkeypatch.setattr(datafeed, "quote", lambda s: None)
+    monkeypatch.setattr(datafeed, "guba_posts",
+                        lambda s, limit=5: [{"title": "拿了三个月终于回本，含泪清仓", "time": "", "clicks": 1, "comments": 30}])
+    exchange.deposit("leek-01", 100000, dt.datetime(2026, 7, 10))
+    exchange.place_order("leek-01", "buy", 100, exchange.Quote("600118", "中国卫星", 90.0, 90.0),
+                         now=dt.datetime(2026, 7, 13, 10, 0))
+    text = feed.build("leek-01", routine.LUNCH, dt.datetime(2026, 7, 14, 12, 0))
+    assert "【中国卫星吧】大家在说：" in text
+    assert "「拿了三个月终于回本，含泪清仓」（30条回复）" in text

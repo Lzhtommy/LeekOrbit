@@ -121,6 +121,9 @@ class ActionSpace:
                 f"千股千评：综合得分{cm['score']:.1f}，全市场排名第{cm['rank']}，"
                 f"关注指数{cm['attention']:.1f}，机构参与度{cm['org_participation']:.1f}%"
             )
+        posts = datafeed.guba_posts(symbol, 3)
+        if posts:
+            lines.append("股吧热帖：" + "；".join(f"「{p['title']}」" for p in posts))
         return "\n".join(lines)
 
     def _do_place_order(self, side: str, symbol: str, qty: int, limit_price: float | None = None) -> str:

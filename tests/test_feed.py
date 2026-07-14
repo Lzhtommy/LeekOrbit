@@ -24,13 +24,14 @@ def online(monkeypatch):
     monkeypatch.setattr(datafeed, "hot_up", lambda top=5: None)
     monkeypatch.setattr(datafeed, "zt_pool", lambda: None)
     monkeypatch.setattr(datafeed, "cls_news", lambda limit=8: None)
+    monkeypatch.setattr(datafeed, "guba_posts", lambda s, limit=5: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: CANNED["quote"])
     monkeypatch.setattr(datafeed, "stock_news", lambda s, limit=5: [{"time": "t", "title": "工行发布公告"}])
 
 
 @pytest.fixture
 def offline(monkeypatch):
-    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "cls_news"):
+    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "cls_news", "guba_posts"):
         monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: None)
     monkeypatch.setattr(datafeed, "stock_news", lambda *a, **k: None)

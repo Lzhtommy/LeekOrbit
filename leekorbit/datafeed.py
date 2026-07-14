@@ -437,3 +437,40 @@ def cls_news(limit: int = 8) -> list[dict] | None:
         return rows[:limit]
 
     return _cached("cls_news", 600, fetch)
+
+
+# -- 股吧原帖（散户原声：情绪传染的介质；东财域名，走 _em 限流） -------------------
+
+def _guba_raw(symbol: str) -> list[dict]:
+    import json
+    import re
+
+    import requests
+
+    def em():
+        r = requests.get(f"https://guba.eastmoney.com/list,{symbol}.html",
+                         headers={"User-Agent": UA}, timeout=10)
+        r.raise_for_status()
+        m = re.search(r"var article_list\s*=\s*(\{.*?\});", r.text, re.S)
+        if not m:
+            raise ValueError("guba 页面结构变更")
+        return json.loads(m.group(1)).get("re") or []
+
+    return _em(em)
+
+
+def guba_posts(symbol: str, limit: int = 5) -> list[dict] | None:
+    """某股吧热帖（按点击量排序，仅取散户帖 type 0/20，剔除公告资讯类）。"""
+    def fetch():
+        posts = [{
+            "title": a["post_title"].strip()[:60],
+            "time": (a.get("post_publish_time") or "")[:16],
+            "clicks": a.get("post_click_count", 0),
+            "comments": a.get("post_comment_count", 0),
+        } for a in _guba_raw(symbol) if a.get("post_type") in (0, 20) and a.get("post_title")]
+        if not posts:
+            raise ValueError(f"guba {symbol} 无散户帖")
+        posts.sort(key=lambda p: -p["clicks"])
+        return posts[:limit]
+
+    return _cached(f"guba:{symbol}", 1800, fetch)
