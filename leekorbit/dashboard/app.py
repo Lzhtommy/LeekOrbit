@@ -41,7 +41,7 @@ def summary():
         value = p["qty"] * last if last else None
         mv += value or 0
         positions.append({
-            "symbol": sym, "name": p["name"], "qty": p["qty"], "avg_cost": round(avg, 3),
+            "symbol": sym, "name": datafeed.display_name(sym, p["name"]), "qty": p["qty"], "avg_cost": round(avg, 3),
             "last": last, "pct": q["pct"] if q else None,
             "pnl": round((last - avg) * p["qty"], 2) if last else None,
             "pnl_pct": round((last / avg - 1) * 100, 2) if last and avg else None,

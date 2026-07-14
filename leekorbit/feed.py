@@ -30,6 +30,7 @@ def _fmt_positions(agent: str) -> str:
         return f"【我的账户】空仓，可用资金 {cash:,.2f} 元"
     lines = [f"【我的账户】可用资金 {cash:,.2f} 元，持仓："]
     for sym, p in pos.items():
+        p = {**p, "name": datafeed.display_name(sym, p["name"])}
         avg = p["cost"] / p["qty"]
         q = datafeed.quote(sym)
         if q:
@@ -64,7 +65,7 @@ def _fmt_holding_news(agent: str) -> str:
     for sym, p in list(pos.items())[:3]:
         news = datafeed.stock_news(sym, 3)
         if news:
-            lines.append(f"【{p['name']}新闻】" + "；".join(n["title"] for n in news))
+            lines.append(f"【{datafeed.display_name(sym, p['name'])}新闻】" + "；".join(n["title"] for n in news))
     return "\n".join(lines)
 
 

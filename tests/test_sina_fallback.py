@@ -45,3 +45,12 @@ def test_prefix_mapping():
     assert datafeed._sina_prefix("000725") == "sz"
     assert datafeed._sina_prefix("300750") == "sz"
     assert datafeed._sina_prefix("830799") == "bj"
+
+
+def test_display_name_heals_placeholder(monkeypatch):
+    monkeypatch.setattr(datafeed, "stock_name", lambda s: "京东方Ａ")
+    assert datafeed.display_name("000725", "000725") == "京东方Ａ"   # 占位名补查
+    assert datafeed.display_name("000725", None) == "京东方Ａ"       # 空名补查
+    assert datafeed.display_name("600118", "中国卫星") == "中国卫星"  # 正常名直接用
+    monkeypatch.setattr(datafeed, "stock_name", lambda s: None)
+    assert datafeed.display_name("000725", "000725") == "000725"     # 全失败退回代码

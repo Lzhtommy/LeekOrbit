@@ -256,3 +256,10 @@ def stock_comment(symbol: str) -> dict | None:
         "score": float(r["综合得分"]), "rank": int(r["目前排名"]),
         "attention": float(r["关注指数"]), "org_participation": float(r["机构参与度"]),
     }
+
+
+def display_name(symbol: str, ledger_name: str | None) -> str:
+    """展示用名称：账本里是空/代码占位时实时补查，查不到再退回代码。"""
+    if ledger_name and ledger_name != symbol:
+        return ledger_name
+    return stock_name(symbol) or symbol
