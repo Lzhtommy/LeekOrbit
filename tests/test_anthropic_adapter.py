@@ -97,3 +97,13 @@ def test_provider_selection_anthropic_with_key(monkeypatch):
     llm = LLM({"provider": "anthropic"})
     assert llm.mock is False
     assert isinstance(llm.client, AnthropicAdapter)
+
+
+def test_empty_env_strings_do_not_shadow_config(monkeypatch):
+    """compose 的 ${VAR:-} 默认值会注入空字符串，必须视为未设置。"""
+    monkeypatch.setenv("LEEK_LLM_PROVIDER", "")
+    monkeypatch.setenv("LEEK_LLM_API_KEY", "")
+    monkeypatch.setenv("LEEK_LLM_BASE_URL", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    llm = LLM({"provider": "anthropic"})
+    assert llm.mock is False and isinstance(llm.client, AnthropicAdapter)

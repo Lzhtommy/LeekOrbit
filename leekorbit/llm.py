@@ -28,7 +28,7 @@ class LLM:
     def __init__(self, cfg: dict | None = None, agent: str = "leek-01"):
         self.cfg = {**DEFAULT_LLM, **(cfg or {})}
         self.agent = agent
-        provider = os.environ.get("LEEK_LLM_PROVIDER", self.cfg["provider"])
+        provider = os.environ.get("LEEK_LLM_PROVIDER") or self.cfg["provider"]  # 空字符串视为未设置（compose 的 :- 默认值会注入空串）
         self.mock = False
         if provider == "anthropic":
             if os.environ.get("ANTHROPIC_API_KEY"):
@@ -39,7 +39,7 @@ class LLM:
                 log.warning("ANTHROPIC_API_KEY 未设置，进入 mock 模式（数据不计入实验观察）")
             return
         key = os.environ.get(self.cfg["api_key_env"]) or os.environ.get("LEEK_LLM_API_KEY")
-        base = os.environ.get("LEEK_LLM_BASE_URL", self.cfg["base_url"])
+        base = os.environ.get("LEEK_LLM_BASE_URL") or self.cfg["base_url"]
         if key:
             from openai import OpenAI
 
