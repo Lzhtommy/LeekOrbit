@@ -24,7 +24,7 @@
   .wake.trade { border-left-color:var(--up); }
   .wake.action { border-left-color:var(--acc); }
   .wake.skipped, .wake.failed { opacity:.45; cursor:default; }
-  #diary .entry { border-bottom:1px dashed #2a2f3a; padding:6px 0; }
+  .entry { border-bottom:1px dashed #2a2f3a; padding:6px 0; }
   #detail { position:fixed; inset:5% 8%; background:#141821; border:1px solid #333; border-radius:12px;
             padding:20px; overflow-y:auto; display:none; z-index:9; white-space:pre-wrap; }
   #detail .close { float:right; cursor:pointer; color:var(--dim); font-size:18px; }
@@ -51,6 +51,8 @@
   </div>
   <div class="card"><h2>决策时间线（点击查看完整快照）</h2><div id="timeline"></div></div>
   <div class="card"><h2>韭菜日记</h2><div id="diary" style="max-height:420px;overflow-y:auto"></div></div>
+  <div class="card"><h2>行为标签（自动标注）</h2><div id="behavior" style="max-height:320px;overflow-y:auto"></div></div>
+  <div class="card"><h2>主观 vs 客观（记忆偏差）</h2><div id="divergence"></div></div>
   <div class="card full"><h2>LLM 成本（元/日）</h2><table id="costs"><thead>
     <tr><th>日期</th><th>调用</th><th>输入token</th><th>输出token</th><th>成本</th></tr></thead><tbody></tbody></table></div>
 </main>
@@ -131,7 +133,25 @@ async function loadCosts() {
   ).join('');
 }
 
-function refresh() { loadSummary(); loadNav(); loadTimeline(); loadDiary(); loadCosts(); }
+async function loadBehavior() {
+  const r = await j('/api/behavior');
+  const badge = t => `<span style="color:var(--acc)">[${t}]</span>`;
+  $('#behavior').innerHTML = (r.events || []).slice().reverse().map(e =>
+    `<div class="entry"><span class="dim">${e.ts.slice(5, 16)}</span> ${badge(e.label)} ${e.name}<br><span class="dim">${e.evidence}</span></div>`
+  ).join('') || '<span class="dim">暂无标注事件</span>';
+}
+
+async function loadDivergence() {
+  const r = await j('/api/divergence');
+  const f = v => v == null ? '–' : (v * 100).toFixed(0) + '%';
+  $('#divergence').innerHTML = `<table>
+    <tr><td>写日记率</td><td>亏损日 ${f(r.diary_rate?.on_loss_days)}</td><td>盈利日 ${f(r.diary_rate?.on_gain_days)}</td></tr>
+    <tr><td>平仓提及率</td><td>亏损单 ${f(r.closed_lot_mention_rate?.losers)}</td><td>盈利单 ${f(r.closed_lot_mention_rate?.winners)}</td></tr>
+    <tr><td>情绪与盈亏一致性</td><td colspan="2">${f(r.sentiment_pnl_consistency)}</td></tr>
+  </table><div class="dim" style="margin-top:6px">亏损侧显著低于盈利侧 = 选择性记录（报喜不报忧）</div>`;
+}
+
+function refresh() { loadSummary(); loadNav(); loadTimeline(); loadDiary(); loadCosts(); loadBehavior(); loadDivergence(); }
 refresh(); setInterval(refresh, 60_000);
 </script>
 </body>

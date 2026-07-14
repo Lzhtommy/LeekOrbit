@@ -107,3 +107,25 @@ def serve_in_thread() -> threading.Thread:
     t.start()
     log.info("dashboard on http://%s:%d", host, port)
     return t
+
+
+@app.get("/api/behavior")
+def behavior_tags():
+    from ..analysis import behavior
+
+    def day_pct(symbol, iso_date):
+        k = datafeed.daily_kline(symbol, 60)
+        return next((row["pct"] for row in k or [] if row["date"] == iso_date), None)
+
+    def current_price(symbol):
+        q = datafeed.quote(symbol)
+        return q["last"] if q else None
+
+    return behavior.tag_trades(_agent(), day_pct, current_price)
+
+
+@app.get("/api/divergence")
+def divergence_report():
+    from ..analysis import divergence
+
+    return divergence.report(_agent())

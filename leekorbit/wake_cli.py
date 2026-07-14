@@ -94,10 +94,13 @@ def register_costs(sub) -> None:
 
 def register_analyze(sub) -> None:
     def cmd(args):
-        from .analysis import disposition
+        from .analysis import behavior, disposition, divergence
 
-        disposition.main(args.agent)
+        mod = {"disposition": disposition, "behavior": behavior, "divergence": divergence}[args.kind]
+        mod.main(args.agent)
 
-    sp = sub.add_parser("analyze", help="处置效应离线统计（只读账本）")
+    sp = sub.add_parser("analyze", help="离线行为分析（只读账本/日记）")
+    sp.add_argument("kind", nargs="?", default="disposition",
+                    choices=["disposition", "behavior", "divergence"])
     sp.add_argument("--agent", default="leek-01")
     sp.set_defaults(func=cmd)
