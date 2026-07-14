@@ -31,6 +31,8 @@ def offline_world(monkeypatch):
                         lambda top=10: [{"rank": 1, "symbol": "000977", "name": "浪潮信息",
                                          "last": 78.17, "pct": 10.01}])
     monkeypatch.setattr(datafeed, "hot_up", lambda top=5: None)
+    monkeypatch.setattr(datafeed, "zt_pool", lambda: None)
+    monkeypatch.setattr(datafeed, "cls_news", lambda limit=8: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: QUOTES.get(s))
     monkeypatch.setattr(datafeed, "stock_name",
                         lambda s: {"000977": "浪潮信息", "601398": "工商银行"}.get(s, s))

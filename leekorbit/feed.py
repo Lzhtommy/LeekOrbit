@@ -69,6 +69,28 @@ def _fmt_holding_news(agent: str) -> str:
     return "\n".join(lines)
 
 
+def _fmt_zt() -> str:
+    pool = datafeed.zt_pool()
+    if not pool:
+        return ""
+    top = pool[:8]
+    highest = top[0]
+    lines = [f"【涨停风向】今日 {len(pool)} 只涨停，最高 {highest['limit_days']} 连板："]
+    lines += [
+        f"  {z['name']}({z['symbol']}) {z['zt_stat']} [{z['industry']}]"
+        + (f" 炸板{z['break_times']}次" if z['break_times'] else "")
+        for z in top
+    ]
+    return "\n".join(lines)
+
+
+def _fmt_flash() -> str:
+    news = datafeed.cls_news(6)
+    if not news:
+        return ""
+    return "【财经快讯】\n" + "\n".join(f"  {n['time']} {n['title']}" for n in news)
+
+
 def _fmt_diary(agent: str, limit: int = 5) -> str:
     entries = memory.recent(agent, limit)
     if not entries:
@@ -127,19 +149,19 @@ def build(agent: str, scene: str, now: dt.datetime | None = None, diary_recall: 
     blocks.append(_fmt_positions(agent))
 
     if scene == routine.PREMARKET:
-        blocks += [_fmt_holding_news(agent), _fmt_hot(), _fmt_diary(agent, diary_recall)]
+        blocks += [_fmt_flash(), _fmt_holding_news(agent), _fmt_hot(), _fmt_diary(agent, diary_recall)]
     elif scene == routine.INTRADAY:
-        blocks += [_fmt_indices(), _fmt_hot()]
+        blocks += [_fmt_indices(), _fmt_zt(), _fmt_hot()]
     elif scene == routine.LUNCH:
-        blocks += [_fmt_indices(), _fmt_hot(), _fmt_holding_news(agent)]
+        blocks += [_fmt_indices(), _fmt_zt(), _fmt_flash(), _fmt_hot(), _fmt_holding_news(agent)]
     elif scene == routine.CLOSE_REVIEW:
-        blocks += [_fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_hot()]
+        blocks += [_fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_zt(), _fmt_hot()]
     elif scene == routine.EVENING:
         blocks += [
-            _fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_holding_news(agent),
-            _fmt_hot(), _fmt_diary(agent, diary_recall),
+            _fmt_indices(), _fmt_today_fills(agent, now.date()), _fmt_zt(), _fmt_flash(),
+            _fmt_holding_news(agent), _fmt_hot(), _fmt_diary(agent, diary_recall),
         ]
     elif scene == routine.WEEKEND:
-        blocks += [_fmt_hot(), _fmt_holding_news(agent), _fmt_diary(agent, diary_recall)]
+        blocks += [_fmt_flash(), _fmt_hot(), _fmt_holding_news(agent), _fmt_diary(agent, diary_recall)]
 
     return "\n\n".join(b for b in blocks if b)

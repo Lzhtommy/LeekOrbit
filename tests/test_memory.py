@@ -9,7 +9,7 @@ D2 = dt.datetime(2026, 7, 9, 9, 10)
 
 def test_diary_verbatim_recall_next_day(monkeypatch):
     """晚间写的日记，次日盘前信息流原文回带——平台不加工、不补充。"""
-    for fn in ("indices", "market_breadth", "hot_rank", "hot_up"):
+    for fn in ("indices", "market_breadth", "hot_rank", "hot_up", "zt_pool", "cls_news"):
         monkeypatch.setattr(datafeed, fn, lambda *a, **k: None)
     monkeypatch.setattr(datafeed, "quote", lambda s: None)
     monkeypatch.setattr(datafeed, "stock_news", lambda *a, **k: None)

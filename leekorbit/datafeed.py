@@ -16,7 +16,30 @@ os.environ.setdefault("TQDM_DISABLE", "1")  # akshare 内部进度条不进日�
 
 log = logging.getLogger(__name__)
 
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+
 _cache: dict[str, tuple[float, object]] = {}
+
+# -- 东财防封：全局串行限流（东财对单 IP 有风控：每秒>5次/分钟≥200次会临时封禁。
+#    社区实践：最小间隔 + 随机抖动；密集重试恰恰是风控最敏感的模式。）
+_EM_MIN_INTERVAL = 1.2
+_em_lock = __import__("threading").Lock()
+_em_last = 0.0
+
+
+def _em(fn):
+    """所有东财系请求（akshare EM 接口 / push2ex）统一经此限流后调用。"""
+    import random
+
+    global _em_last
+    with _em_lock:
+        wait = _em_last + _EM_MIN_INTERVAL + random.uniform(0, 0.5) - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            return fn()
+        finally:
+            _em_last = time.time()
 
 
 def _cached(key: str, ttl: float, fn, retries: int = 3):
@@ -37,7 +60,75 @@ def _cached(key: str, ttl: float, fn, retries: int = 3):
     return None
 
 
-# -- 新浪备用源（东财 push2 在部分网络下被断连，两源互备） ------------------------
+# -- 腾讯行情（主源：不封 IP，字段含权威涨跌停价；索引表实测校准 2026-05） ---------
+
+
+def _tencent_prefix(symbol: str) -> str:
+    if symbol.startswith(("6", "9")):
+        return "sh"
+    if symbol.startswith(("4", "8")):
+        return "bj"
+    return "sz"
+
+
+def _tencent_raw(codes: list[str]) -> dict[str, list[str]]:
+    import requests
+
+    url = "https://qt.gtimg.cn/q=" + ",".join(codes)
+    r = requests.get(url, headers={"User-Agent": UA}, timeout=8)
+    r.raise_for_status()
+    r.encoding = "gbk"
+    out = {}
+    for line in r.text.strip().split(";"):
+        if "=" not in line or '"' not in line:
+            continue
+        key = line.split("=")[0].strip().split("_")[-1]
+        out[key] = line.split('"')[1].split("~")
+    return out
+
+
+def _parse_tencent_quote(symbol: str, vals: list[str]) -> dict:
+    if len(vals) < 53 or not vals[3] or float(vals[3]) == 0:
+        raise ValueError(f"tencent 无 {symbol} 行情")
+    _sina_names[symbol] = vals[1]  # 名称兜底缓存与新浪共用
+    return {
+        "symbol": symbol,
+        "last": float(vals[3]),
+        "prev_close": float(vals[4]),
+        "limit_up": float(vals[47]),
+        "limit_down": float(vals[48]),
+        "open": float(vals[5]),
+        "high": float(vals[33]),
+        "low": float(vals[34]),
+        "pct": float(vals[32]),
+        "turnover": float(vals[38] or 0),
+    }
+
+
+def _fetch_quote_tencent(symbol: str) -> dict:
+    code = f"{_tencent_prefix(symbol)}{symbol}"
+    return _parse_tencent_quote(symbol, _tencent_raw([code])[code])
+
+
+_TENCENT_INDEX_CODES = {
+    "sh000001": "上证指数", "sz399001": "深证成指",
+    "sz399006": "创业板指", "sh000300": "沪深300",
+}
+
+
+def _fetch_indices_tencent() -> list[dict]:
+    raw = _tencent_raw(list(_TENCENT_INDEX_CODES))
+    out = []
+    for code, label in _TENCENT_INDEX_CODES.items():
+        vals = raw.get(code)
+        if vals and len(vals) > 32 and vals[3]:
+            out.append({"name": label, "last": float(vals[3]), "pct": float(vals[32])})
+    if not out:
+        raise ValueError("tencent 指数无数据")
+    return out
+
+
+# -- 新浪备用源（东财 push2 在部分网络下被断连，三源互备） ------------------------
 
 _sina_names: dict[str, str] = {}
 
@@ -100,9 +191,15 @@ def _fetch_indices_sina() -> list[dict]:
 # -- 大盘 ---------------------------------------------------------------------
 
 def indices() -> list[dict] | None:
-    """上证指数/深证成指/创业板指/沪深300 的现价与涨跌幅。东财主源，新浪备用。"""
+    """四大指数现价与涨跌幅。链路：腾讯（不封IP）→ 新浪 → 东财。"""
     def fetch():
-        try:
+        for name, src in (("腾讯", _fetch_indices_tencent), ("新浪", _fetch_indices_sina)):
+            try:
+                return src()
+            except Exception as e:
+                log.info("indices %s失败(%s)，切下一源", name, e)
+
+        def em():
             import akshare as ak
 
             df = ak.stock_zh_index_spot_em(symbol="沪深重要指数")
@@ -111,9 +208,8 @@ def indices() -> list[dict] | None:
                 {"name": r["名称"], "last": float(r["最新价"]), "pct": float(r["涨跌幅"])}
                 for _, r in keep.iterrows()
             ]
-        except Exception as e:
-            log.info("indices 东财失败(%s)，改用新浪", e)
-            return _fetch_indices_sina()
+
+        return _em(em)
 
     return _cached("indices", 60, fetch)
 
@@ -133,9 +229,17 @@ def market_breadth() -> dict | None:
 # -- 个股 ---------------------------------------------------------------------
 
 def quote(symbol: str) -> dict | None:
-    """实时快照：最新、昨收、涨停、跌停、今开、最高、最低。东财主源，新浪备用。"""
+    """实时快照：最新、昨收、涨停、跌停、今开、最高、最低、换手。
+
+    链路：腾讯（不封IP，涨跌停价权威）→ 东财 → 新浪（涨跌停按昨收推算）。
+    """
     def fetch():
         try:
+            return _fetch_quote_tencent(symbol)
+        except Exception as e:
+            log.info("quote %s 腾讯失败(%s)，切东财", symbol, e)
+
+        def em():
             import akshare as ak
 
             q = ak.stock_bid_ask_em(symbol=symbol)
@@ -152,8 +256,11 @@ def quote(symbol: str) -> dict | None:
                 "pct": float(m["涨幅"]),
                 "turnover": float(m["换手"]),
             }
+
+        try:
+            return _em(em)
         except Exception as e:
-            log.info("quote %s 东财失败(%s)，改用新浪", symbol, e)
+            log.info("quote %s 东财失败(%s)，切新浪", symbol, e)
             return _fetch_quote_sina(symbol)
 
     return _cached(f"quote:{symbol}", 30, fetch)
@@ -162,10 +269,13 @@ def quote(symbol: str) -> dict | None:
 def _spot_table():
     """全市场快照表（名称等静态信息用，1小时缓存）。"""
     def fetch():
-        import akshare as ak
+        def em():
+            import akshare as ak
 
-        df = ak.stock_zh_a_spot_em()
-        return dict(zip(df["代码"], df["名称"]))
+            df = ak.stock_zh_a_spot_em()
+            return dict(zip(df["代码"], df["名称"]))
+
+        return _em(em)
 
     return _cached("spot_names", 3600, fetch)
 
@@ -193,7 +303,7 @@ def daily_kline(symbol: str, days: int = 20) -> list[dict] | None:
             for _, r in df.iterrows()
         ]
 
-    return _cached(f"kline:{symbol}:{days}", 3600, fetch)
+    return _cached(f"kline:{symbol}:{days}", 3600, lambda: _em(fetch))
 
 
 def stock_news(symbol: str, limit: int = 5) -> list[dict] | None:
@@ -203,7 +313,7 @@ def stock_news(symbol: str, limit: int = 5) -> list[dict] | None:
         df = ak.stock_news_em(symbol=symbol).head(limit)
         return [{"time": str(r["发布时间"]), "title": str(r["新闻标题"])} for _, r in df.iterrows()]
 
-    return _cached(f"news:{symbol}", 1800, fetch)
+    return _cached(f"news:{symbol}", 1800, lambda: _em(fetch))
 
 
 # -- 散户情绪（社媒代理信号） --------------------------------------------------
@@ -220,7 +330,7 @@ def hot_rank(top: int = 10) -> list[dict] | None:
             for _, r in df.iterrows()
         ]
 
-    return _cached("hot_rank", 300, fetch)
+    return _cached("hot_rank", 300, lambda: _em(fetch))
 
 
 def hot_up(top: int = 5) -> list[dict] | None:
@@ -235,7 +345,7 @@ def hot_up(top: int = 5) -> list[dict] | None:
             for _, r in df.iterrows()
         ]
 
-    return _cached("hot_up", 300, fetch)
+    return _cached("hot_up", 300, lambda: _em(fetch))
 
 
 def stock_comment(symbol: str) -> dict | None:
@@ -245,7 +355,7 @@ def stock_comment(symbol: str) -> dict | None:
 
         return ak.stock_comment_em()
 
-    df = _cached("comment_all", 3600, fetch_all)  # 整表拉一次，各票共享缓存
+    df = _cached("comment_all", 3600, lambda: _em(fetch_all))  # 整表拉一次，各票共享缓存
     if df is None:
         return None
     row = df[df["代码"] == symbol]
@@ -263,3 +373,67 @@ def display_name(symbol: str, ledger_name: str | None) -> str:
     if ledger_name and ledger_name != symbol:
         return ledger_name
     return stock_name(symbol) or symbol
+
+
+# -- 打板/题材（散户题材叙事的主粮；东财 push2ex，走 _em 限流） -------------------
+
+def _zt_raw(date: str) -> list[dict]:
+    import requests
+
+    def em():
+        r = requests.get(
+            "https://push2ex.eastmoney.com/getTopicZTPool",
+            params={"ut": "7eea3edcaed734bea9cbfc24409ed989", "dpt": "wz.ztzt",
+                    "Pageindex": 0, "pagesize": 200, "sort": "fbt:asc", "date": date},
+            headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        return (r.json().get("data") or {}).get("pool") or []
+
+    return _em(em)
+
+
+def zt_pool() -> list[dict] | None:
+    """今日涨停池：名称、行业、连板数、N天M板、炸板次数。按连板数降序。"""
+    def fetch():
+        pool = _zt_raw(dt.date.today().strftime("%Y%m%d"))
+        out = [{
+            "symbol": str(p["c"]).zfill(6), "name": p["n"],
+            "industry": p.get("hybk", ""), "limit_days": p.get("lbc", 1),
+            "break_times": p.get("zbc", 0),
+            "zt_stat": f'{(p.get("zttj") or {}).get("days", "?")}天{(p.get("zttj") or {}).get("ct", "?")}板',
+        } for p in pool]
+        return sorted(out, key=lambda x: -x["limit_days"])
+
+    return _cached("zt_pool", 300, fetch)
+
+
+# -- 财联社快讯（v1 API + 本地签名，零 key；与东财不同源不同风控面） ----------------
+
+def cls_news(limit: int = 8) -> list[dict] | None:
+    """财联社电报：全市场财经快讯。"""
+    def fetch():
+        import hashlib
+
+        import requests
+
+        params = {"appName": "CailianpressWeb", "os": "web", "sv": "7.7.5",
+                  "last_time": "", "refresh_type": "1", "rn": str(max(limit, 20))}
+        qs = "&".join(f"{k}={params[k]}" for k in sorted(params))
+        sign = hashlib.md5(hashlib.sha1(qs.encode()).hexdigest().encode()).hexdigest()
+        r = requests.get(f"https://www.cls.cn/v1/roll/get_roll_list?{qs}&sign={sign}",
+                         headers={"User-Agent": UA, "Referer": "https://www.cls.cn/"}, timeout=10)
+        r.raise_for_status()
+        rows = []
+        for item in (r.json().get("data") or {}).get("roll_data", []) or []:
+            ts = item.get("ctime")
+            rows.append({
+                "time": dt.datetime.fromtimestamp(ts).strftime("%H:%M") if ts else "",
+                "title": item.get("title") or (item.get("brief") or "")[:80],
+            })
+        if not rows:
+            raise ValueError("cls 空返回")
+        return rows[:limit]
+
+    return _cached("cls_news", 600, fetch)
